@@ -17,6 +17,10 @@ jobs:
       - name: Build Project
         run: npm run build
 
+      - name: Get Version
+        id: get_version
+        run: echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
+
   run_tests:
     name: run tests
     runs-on: ubuntu-latest
@@ -42,7 +46,7 @@ jobs:
         run: sleep 3
 
   build_docker_image_and_push:
-    name: Build Docker Image and Push to Docker Hub
+    name: Build Docker Image and Push to DockerHub
     runs-on: ubuntu-latest
     needs: [run_tests, sonarqube, upload_to_artifactory]
     steps:
@@ -52,35 +56,57 @@ jobs:
       - name: Log in to Docker Hub
         run: echo aByF4bBc#yd3Li67 | docker login -u aablotia --password-stdin
 
+      - name: Get Version and App Name
+        id: get_version_and_app_name
+        run: |
+          echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
+          echo "APP_NAME=$(jq -r .name package.json)" >> $GITHUB_ENV
+          echo "VERSION=$(jq -r .version package.json)"
+          echo "APP_NAME=$(jq -r .name package.json)"
+
       - name: Build Docker Image
-        run: docker build -t aablotia/react-app:latest .
+        run: docker build -t aablotia/${{ env.APP_NAME }}:${{ env.VERSION }} .
 
       - name: Push Docker Image to Docker Hub
-        run: docker push aablotia/react-app:latest
+        run: docker push aablotia/${{ env.APP_NAME }}:${{ env.VERSION }}
+
+
 
   deploy-DEV:
     name: Deploy to Server - DEV
     runs-on: ubuntu-latest
     needs: build_docker_image_and_push
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Get Artifact ID and Version
+        id: get_artifact_id_and_version
+        run: |
+          echo "ARTIFACT_ID=$(jq -r .name package.json)" >> $GITHUB_ENV
+          echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
+          echo "ARTIFACT_ID=$(jq -r .name package.json)"
+          echo "VERSION=$(jq -r .version package.json)" 
+
       - name: Deploy Docker Container
         env:
           DEBIAN_SERVER_USERNAME: aablotia
           DEBIAN_SERVER: 108.17.127.80
           DOCKERHUB_USERNAME: aablotia
-          ARTIFACT_ID: react-app
+          ARTIFACT_ID: ${{ env.ARTIFACT_ID }}
+          VERSION: ${{ env.VERSION }}
           ID_RSA: ${{ secrets.ID_RSA }}
 
         run: |
           echo "${ID_RSA}" > id_rsa
           chmod 600 id_rsa
           echo "Pulling docker image  react-app from Dockerhub ....................................................."
-          ssh -i id_rsa -o StrictHostKeyChecking=no $DEBIAN_SERVER_USERNAME@$DEBIAN_SERVER "docker pull ${DOCKERHUB_USERNAME}/${ARTIFACT_ID}:latest"
+          ssh -i id_rsa -o StrictHostKeyChecking=no $DEBIAN_SERVER_USERNAME@$DEBIAN_SERVER "docker pull ${DOCKERHUB_USERNAME}/${ARTIFACT_ID}:${VERSION}"
           
           echo "Stopping application react-app in docker container ....................................................."
           ssh -i id_rsa -o StrictHostKeyChecking=no $DEBIAN_SERVER_USERNAME@$DEBIAN_SERVER "docker stop react-app || true"
           ssh -i id_rsa -o StrictHostKeyChecking=no $DEBIAN_SERVER_USERNAME@$DEBIAN_SERVER "docker rm react-app || true"
 
           echo "Running application in docker container ....................................................."
-          ssh -i id_rsa -o StrictHostKeyChecking=no $DEBIAN_SERVER_USERNAME@$DEBIAN_SERVER "docker run -d -p 3000:80 --name react-app ${DOCKERHUB_USERNAME}/${ARTIFACT_ID}:latest"
+          ssh -i id_rsa -o StrictHostKeyChecking=no $DEBIAN_SERVER_USERNAME@$DEBIAN_SERVER "docker run -d -p 3000:80 --name react-app ${DOCKERHUB_USERNAME}/${ARTIFACT_ID}:${VERSION}"
 

@@ -2,7 +2,7 @@
   "name": "product-management",
   "proxy": "http://localhost:3001",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
